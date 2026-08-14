@@ -1,0 +1,26 @@
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+#include "BraceletRuntimeStructs_c.h"
+
+int main() {
+  // TODO: test LLVM and LLDB
+  {% for ty in ALL_STRUCTS %}
+    assert(alignof({{ ty.name }}) == {{ ty.layout.align }});
+    assert(sizeof({{ ty.name }}) == {{ ty.layout.size }});
+    {% for field, offset in zip(ty.field_names, ty.field_offsets) %}
+      assert(offsetof({{ ty.name }}, {{ field }}) == {{ offset }});
+    {% endfor %}
+    {% for blob in test_blobs[ty] %}
+      {
+        {{ ty.name }} value;
+        static const uint8_t blob[] = { {{ blob|join(", ") }} };
+        assert(sizeof(blob) == sizeof(value));
+        memcpy(&value, blob, sizeof(value));
+        {{ ty.test_decode_code("value", ty.unpack(blob)) }}
+      }
+    {% endfor %}
+  {% endfor %}
+  return 0;
+}

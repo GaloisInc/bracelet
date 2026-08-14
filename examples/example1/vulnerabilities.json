@@ -1,0 +1,34 @@
+{
+    "vulnerabilities": [
+        {
+            "cve-id": "CVE-2022-37434",
+            "cve-description": "inflate.c via a large gzip header extra field",
+            "package-name": "zlib",
+            "package-version": "<=1.2.12",
+            "cwe-id": "122",
+            "cwe-name": "Heap-based Buffer Overflow",
+            "affected-function": "inflateGetHeader",
+            "affected-file": "inflate.c"
+        },
+        {
+            "cve-id": "CVE-2022-48554",
+            "package-name": "libmagic",
+            "package-version": "<=5.43",
+            "cve-description": "In the readelf functionality of libmagic file_copystr is vulnerable to a stack based over-read",
+            "cwe-id": "125",
+            "cwe-name": "Out-of-bounds Read",
+            "affected-function": "file_copystr",
+            "affected-file": "funcs.c"
+        },
+        {
+            "cve-id": "CVE-2025-27113",
+            "package-name": "libxml2",
+            "package-version": "<2.13.6",
+            "cve-description": "libxml2 before 2.12.10 and 2.13.x before 2.13.6 has a NULL pointer dereference in xmlPatMatch in pattern.c.",
+            "cwe-id": "476",
+            "cwe-name": "Null Pointer Dereference",
+            "affected-function": "xmlPatMatch",
+            "affected-file": "pattern.c"
+        }
+    ]
+}

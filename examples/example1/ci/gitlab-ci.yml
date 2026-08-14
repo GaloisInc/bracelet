@@ -1,0 +1,76 @@
+.example1:
+  image: ${CI_REGISTRY_IMAGE}/bracelet-toolchain:${BRACELET_TOOLCHAIN_TAG}
+  tags:
+    - stardust
+    - Linux
+  rules:
+    - if: "($CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH) && ($CI_PROJECT_URL =~ /gitlab-ext\\.galois\\.com/)"
+      variables:
+        BRACELET_TOOLCHAIN_TAG: "$CI_COMMIT_SHA"
+    - if: "($CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH) && ($CI_PROJECT_URL =~ /gitlab-ext\\.galois\\.com/)"
+      variables:
+        BRACELET_TOOLCHAIN_TAG: "latest"
+  before_script:
+    # The currently published image places dockerTools.caCertificates below
+    # /usr because its build environment uses extraPrefix = "/usr".
+    - export SSL_CERT_FILE=/usr/etc/ssl/certs/ca-bundle.crt
+    - export GIT_SSL_CAINFO="$SSL_CERT_FILE"
+    - cd "$CI_PROJECT_DIR/examples/example1"
+
+example1-build:
+  extends: .example1
+  stage: build
+  variables:
+    VCPKG_DEFAULT_BINARY_CACHE: ${CI_PROJECT_DIR}/examples/example1/vcpkg-cache
+  cache:
+    key: example1-vcpkg
+    paths:
+      - examples/example1/vcpkg-cache
+  script:
+    - mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+    - BRACELET_BIN_DIR="$(dirname "$(dirname "$BRACELET_TOOLCHAIN_FILE")")/bin"
+    - '"$BRACELET_BIN_DIR/bracelet-c++.sh" --version'
+    - |
+      if ! cmake -S . -B build -G Ninja \
+        -DVCPKG_TARGET_TRIPLET=x64-linux-braceletnodbg \
+        -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$BRACELET_TOOLCHAIN_FILE" \
+        -DCMAKE_TOOLCHAIN_FILE="$VCPKG_TOOLCHAIN_FILE"; then
+        for log in /root/.vcpkg/root/buildtrees/detect_compiler/*x64-linux-braceletnodbg*.log; do
+          if test -f "$log"; then
+            echo "===== $log"
+            cat "$log"
+          fi
+        done
+        exit 1
+      fi
+    - cmake --build build --parallel
+    - ctest --test-dir build --output-on-failure
+  artifacts:
+    paths:
+      - examples/example1/build/compressor
+
+example1-snapshot:
+  extends: .example1
+  stage: example1-snapshot
+  needs:
+    - job: example1-build
+      artifacts: true
+  script:
+    - python -m bracelet_scripts.snapshot_handler snapshot -- ./build/compressor --file ./example-input/input.txt.gz
+  artifacts:
+    paths:
+      - examples/example1/snapshot
+
+example1-analysis:
+  extends: .example1
+  stage: example1-analysis
+  needs:
+    - job: example1-snapshot
+      artifacts: true
+  script:
+    - python -m bracelet_scripts.entrypoint --bracelet-edges bracelet-edges snapshot --vuln-json vulnerabilities.json --run-cg-filter --save-callgraph callgraph.csv | tee result.json
+  artifacts:
+    when: always
+    paths:
+      - examples/example1/callgraph.csv
+      - examples/example1/result.json

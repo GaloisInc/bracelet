@@ -1,0 +1,11 @@
+[wrap-file]
+directory = Heap-Layers-1.0.0
+source_url = https://github.com/emeryberger/Heap-Layers/archive/refs/tags/v1.0.0.tar.gz
+source_filename = Heap-Layers-1.0.0.tar.gz
+source_hash = cf8544d30dfc5b01c026183a4623fe325cdaedaddf220c487c5921975597df47
+wrapdb_version = 1.0.0-1
+patch_directory = heap-layers
+
+[provide]
+heap_layers = heap_layers
+

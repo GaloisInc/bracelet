@@ -1,0 +1,15 @@
+<%
+assert(this_function_nargs <= arg_names.size());
+auto args = arg_names.subspan(0, this_function_nargs);
+%>
+<% writePrototype(out_stream, sym.symbol(), this_function_nargs); %> {
+  T tmp = malloc(__nondeterministic_choice());
+  while (__nondeterministic_choice()) {
+<% for (auto arg: args) { %>
+    NONDET tmp = <%= arg %>;
+    NONDET *((T*)tmp) = tmp;
+    NONDET tmp = *((T*)tmp);
+<% } %>
+  }
+  return tmp;
+}

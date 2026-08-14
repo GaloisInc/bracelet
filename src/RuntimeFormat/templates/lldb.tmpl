@@ -1,0 +1,44 @@
+#pragma once
+
+#include <stdint.h>
+#include <array>
+
+#include "ObjectParsing/ObjectParsing.h"
+#include "Result/Result.h"
+
+namespace bracelet {
+namespace runtime_format_lldb {
+
+template<typename T>
+struct Pointer {
+  object_parsing::Address ptr;
+};
+
+{% for ty in ALL_STRUCTS %}
+  struct {{ty.name}};
+{% endfor %}
+{% for ty in ALL_STRUCTS %}
+  struct {{ ty.name }} {
+    static Result<{{ ty.name }}> load(object_parsing::Object& obj, object_parsing::Address ptr) {
+      {{ ty.name }} out;
+      BRACELET_TRY_CONTEXT(
+        obj.copyData(boost::span(
+          reinterpret_cast<uint8_t*>(&out),
+          sizeof(out)
+        ), ptr), 
+        "Initial copy of {{ ty.name }}"
+      );
+      {{ ty.lldb_ptr_load("out" ~ field, "ptr") }}
+      return out;
+    }
+
+    {% for field, field_ty in ty.fields.items() %}
+      {{ field_ty.lldb_type }} {{field}};
+    {% endfor %}
+  };
+  static_assert(sizeof({{ ty.name }}) == {{ ty.layout.size }}, "");
+{% endfor %}
+
+} // namespace runtime_format_lldb
+} // namespace bracelet
+

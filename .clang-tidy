@@ -1,0 +1,42 @@
+# -*- yaml -*-
+---
+
+WarningsAsErrors: '*'
+
+HeaderFilterRegex: '(src|test)/.*'
+ExcludeHeaderFilterRegex: '(^|.*/)subprojects/.*'
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-forward-declaration-namespace,
+  -bugprone-narrowing-conversions,
+  -bugprone-reserved-identifier,
+  -bugprone-unchecked-optional-access,
+  clang-analyzer-*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  clang-diagnostic-*,
+  misc-*,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
+  -misc-unused-parameters,
+  -misc-use-anonymous-namespace,
+  -misc-use-internal-linkage,
+  performance-*,
+  -performance-enum-size,
+  -performance-faster-string-find,
+  -performance-unnecessary-value-param,
+  readability-const-return-type,
+  readability-delete-null-pointer,
+  readability-non-const-parameter,
+  readability-redundant-smartptr-get,
+  readability-redundant-string-cstr,
+  readability-string-compare
+
+CheckOptions:
+  - key: readability-redundant-member-init.IgnoreBaseInCopyConstructors
+    value: '1'

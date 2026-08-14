@@ -1,0 +1,11 @@
+[wrap-file]
+directory = streamvbyte-2.0.0
+source_url = https://github.com/fast-pack/streamvbyte/archive/refs/tags/v2.0.0.tar.gz
+source_filename = streamvbyte-2.0.0.tar.gz
+source_hash = 51ca1c3b02648ea4b965d65b0e586891981f2e8184b056520e38ad70bcc43dd8
+wrapdb_version = 2.0.0-1
+patch_directory = streamvbyte
+
+[provide]
+streamvbyte = streamvbyte
+

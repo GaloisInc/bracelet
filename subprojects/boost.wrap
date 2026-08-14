@@ -1,0 +1,10 @@
+[wrap-file]
+directory = boost-1.89.0
+source_url = https://github.com/boostorg/boost/releases/download/boost-1.89.0/boost-1.89.0-b2-nodocs.tar.gz
+source_filename = boost-1.89.0-b2-nodocs.tar.gz
+source_hash = aa25e7b9c227c21abb8a681efd4fe6e54823815ffc12394c9339de998eb503fb
+patch_directory = boost
+
+[provide]
+dependency_names = boost
+

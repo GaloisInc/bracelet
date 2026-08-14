@@ -1,0 +1,325 @@
+# Rules for starting pipelines.
+# Gitlab disables jobs by default for merge request pipelines unless they have
+# `rules` specified. This section ensures that:
+# - Merge requests, branches and new tags each trigger pipelines.
+# - By default, a merge request pipeline has the same jobs enabled as a branch
+#   pipeline (this can be modified per job).
+# - Once a merge request is open, the corresponding branch pipelines are no
+#   longer started.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+include:
+  - local: 'examples/example1/ci/gitlab-ci.yml'
+
+variables:
+  GIT_SUBMODULE_STRATEGY: none
+  GIT_SUBMODULE_DEPTH: 1
+  LLVM_IMAGE: "$CI_REGISTRY/galois/llvm-project/llvm:galois"
+  ECFS_IMAGE: "$CI_REGISTRY/galois/ecfs/ecfs:main"
+  SVF_IMAGE: "$CI_REGISTRY/galois/svf/svf:galois-3.1"
+  ENABLE_LIBALLOCS: 0
+  BRACELET_DEBUG_INFO: "true"
+  BRACELET_TRACE: "off"
+  BRACELET_TOOLCHAIN_TAG: "latest"
+  SCREACH_IMAGE: "$CI_REGISTRY/galois/bracelet/screach_base:main"
+  LIBALLOCS_IMAGE: "$CI_REGISTRY/galois/liballocs/liballocs:break-out-llvm"
+
+stages:
+  - docker
+  - build
+  - example1-snapshot
+  - example1-analysis
+  - downstream
+  - doc
+
+
+.doc-template:
+  image: rust:1.93.0
+  stage: doc
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    GIT_SUBMODULE_DEPTH: 0
+  tags:
+    - stardust
+    - Linux
+  stage: doc
+  script:
+    - cd doc && mdbook-mermaid install ./ && mdbook build
+
+  before_script:
+    - cargo install mdbook
+    - cargo install mdbook-mermaid
+
+
+create-pages:
+  extends: .doc-template
+  pages:
+    publish: doc/book
+  rules:
+    - if: "($CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH) && ($CI_PROJECT_URL =~ /gitlab-ext\\.galois\\.com/)"
+
+build-pages:
+  extends: .doc-template
+  rules:
+    - if: "($CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH) && ($CI_PROJECT_URL =~ /gitlab-ext\\.galois\\.com/)"
+
+
+create-builder-image:
+  stage: docker
+  cache: []
+  tags:
+    - stardust
+    - Linux
+  image: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:29
+  services:
+    - ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:29-dind
+  retry: 2
+  rules:
+    - if: "($CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH) && ($CI_PROJECT_URL =~ /gitlab-ext\\.galois\\.com/)"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - docker pull ${CI_REGISTRY_IMAGE}/bracelet-toolchain-builder:latest || true
+    - docker build --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from ${CI_REGISTRY_IMAGE}/bracelet-toolchain-builder:latest -t ${CI_REGISTRY_IMAGE}/bracelet-toolchain-builder:latest --file build_docker/bracelet-toolchain-builder.Dockerfile .
+    - docker push ${CI_REGISTRY_IMAGE}/bracelet-toolchain-builder:latest
+    - docker rmi ${CI_REGISTRY_IMAGE}/bracelet-toolchain-builder:latest
+  after_script:
+    - docker logout ${CI_REGISTRY}
+  needs: []
+
+
+create-docker-image:
+  stage: docker
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_DEPTH: 10
+  tags:
+    - stardust
+    - Linux
+  image: ${CI_REGISTRY_IMAGE}/bracelet-toolchain-builder:latest
+  timeout: 4 hours
+  rules:
+    - if: "($CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH) && ($CI_PROJECT_URL =~ /gitlab-ext\\.galois\\.com/)"
+  before_script:
+    - . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+    - echo "$CI_REGISTRY_PASSWORD" | skopeo login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - mkdir -m0770 -p ./ccache/
+    - mv ./ccache/ /nix/var/cache/
+    - nix run nixpkgs#nix-prefetch-docker -- --image-name ubuntu --image-tag 24.04 --image-digest sha256:d1e2e92c075e5ca139d51a140fff46f84315c0fdce203eab2807c7e495eff4f9
+    # Defensively remove even though this shouldn't exist in CI
+    - rm -rf src/bracelet_scripts/rules/*
+    - nix-build -A docker-image
+    - ./result > bracelet-toolchain
+    - skopeo copy docker-archive:bracelet-toolchain docker://${CI_REGISTRY_IMAGE}/bracelet-toolchain:${CI_COMMIT_SHA}
+    - skopeo copy docker-archive:bracelet-toolchain docker://${CI_REGISTRY_IMAGE}/bracelet-toolchain:latest
+    - mv /nix/var/cache/ccache ./ccache
+  cache:
+    paths:
+      - ./ccache
+  needs: ["create-builder-image"]
+
+
+format-checks:
+  rules:
+    - when: always
+  stage: build
+  image:
+    name: ghcr.io/astral-sh/uv:bookworm-slim
+    entrypoint: [""]
+  script:
+    - uv run --dev ruff check src
+    - uv run --dev isort --check src
+    - uv run --dev black --check src
+    - uv run --dev mypy src
+
+# Check Nix static semantics since the build only happens on main
+nix-checks:
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_DEPTH: 10
+  rules:
+    - when: always
+  stage: build
+  image:
+    name: nixos/nix:2.31.2
+    entrypoint: [""]
+  script:
+    - nix-instantiate
+
+typos-checks:
+  rules:
+    - when: always
+  stage: build
+  image:
+    name: alpine:3.23
+    entrypoint: [""]
+  before_script:
+    - wget -q https://github.com/crate-ci/typos/releases/download/v1.48.0/typos-v1.48.0-x86_64-unknown-linux-musl.tar.gz -O /tmp/typos.tar.gz
+    - tar -xzf /tmp/typos.tar.gz -C /usr/local/bin ./typos
+  script:
+    - find . -type f -name '*.md' -print | typos --file-list -
+
+upstream-llvm:
+  rules:
+    - when: always
+  stage: build
+  image:
+    name: nixos/nix:2.31.2
+    entrypoint: [""]
+  before_script:
+    # Some runners cannot reach tarballs.nixos.org. Seed the fixed-output
+    # bootstrap paths from the regular Nix binary cache instead.
+    - nix --extra-experimental-features nix-command copy --from https://cache.nixos.org /nix/store/2pizl7lq4awa7p9bklr8037yh1sca0hg-bootstrap-tools.tar.xz
+    - nix --extra-experimental-features nix-command copy --from https://cache.nixos.org /nix/store/p9wzypb84a60ymqnhqza17ws0dvlyprg-busybox
+  script:
+    - |
+      nix-shell -E '
+        let p = import ./nixpkgs.nix;
+        in p.mkShell {
+          LLDB_INCLUDE = "${p.llvmPackages_latest.lldb.dev}/include";
+          packages = [
+            p.llvmPackages_latest.clang-tools
+            p.llvmPackages_latest.llvm
+            p.llvmPackages_latest.clang
+            p.llvmPackages_latest.clang-unwrapped
+            p.llvmPackages_latest.lldb
+            p.cmake
+            p.ninja
+            p.pkg-config
+            p.meson
+            p.uv
+            p.python312
+            p.cacert
+            p.zlib
+          ];
+        }
+      ' --run '
+        export UV_PROJECT_ENVIRONMENT="$CI_PROJECT_DIR/.venv-upstream-llvm"
+        uv sync --dev
+        export LLVM_CONFIG="$(command -v llvm-config)"
+        clang_dir="$(dirname "$(command -v clang)")"
+        uv run meson setup build-upstream-llvm \
+          --buildtype=debugoptimized \
+          -Dbracelet_llvm_extensions=false \
+          -Dclang-dir="$clang_dir"
+        uv run meson compile \
+          -C build-upstream-llvm \
+          bracelet-cc.sh \
+          bracelet-edges \
+          src/RuntimeFormat/BraceletRuntimeStructs_lldb.h \
+          src/PointsTo/template_c.txt.inc \
+          src/PointsTo/template_conservative.txt.inc \
+          src/PointsTo/template_define_globals.txt.inc \
+          src/PointsTo/template_prelude.txt.inc \
+          src/PointsTo/template_svf.Makefile.inc
+        uv run meson test \
+          -C build-upstream-llvm \
+          --no-rebuild \
+          --print-errorlogs \
+          --suite metadata
+        run-clang-tidy \
+          -p build-upstream-llvm \
+          -quiet \
+          -extra-arg=-resource-dir="$(clang -print-resource-dir)" \
+          -extra-arg=-I"$(llvm-config --includedir)" \
+          -extra-arg=-isystem"$LLDB_INCLUDE" \
+          "^$CI_PROJECT_DIR/src/.*\\.cpp$"
+      '
+
+build-it-REDACTED:
+  rules:
+    - if: "$CI_PROJECT_URL =~ /gitlab\\.ebossproject\\.com/"
+  timeout: 4h
+  stage: build
+  image:
+    name: ${CI_REGISTRY}/general/docker-images/docker-builder:latest
+  tags: [privileged]
+  script:
+    - if [[ $ENABLE_LIBALLOCS -eq 1 ]]; then echo '-Dforce_dwarf4=true' >> ci-flags.txt; fi
+    - echo "-Dbracelet_trace=$BRACELET_TRACE" >> ci-flags.txt
+    - echo "-Dbracelet_debug=$BRACELET_DEBUG_INFO" >> ci-flags.txt
+    - if [[ -f ci-flags.txt ]]; then cat ci-flags.txt; fi
+    - >
+      KANIKO_EXTRA_ARGS="--compressed-caching=false"
+      KANIKO_EXTRA_AGRS="--compressed-caching=false"
+      TAGS=pipe-${CI_PIPELINE_ID}
+      NAME=build_base
+      DOCKERFILE=build_base/Dockerfile
+      /build.sh
+  variables:
+    BUILD_ARGS: >
+      LLVM_IMAGE=${LLVM_IMAGE} |
+      SVF_IMAGE=${SVF_IMAGE} |
+      LIBALLOCS_IMAGE=${LIBALLOCS_IMAGE} |
+      ENABLE_LIBALLOCS=${ENABLE_LIBALLOCS}
+
+build-it-REDACTED-part2:
+  # For some reason, we can only do a single build command per job
+  needs: ["build-it-REDACTED"]
+  rules:
+    - if: "$CI_PROJECT_URL =~ /gitlab\\.ebossproject\\.com/"
+  timeout: 4h
+  stage: build
+  image:
+    name: ${CI_REGISTRY}/general/docker-images/docker-builder:latest
+  script:
+    # The build script misspelles "args" as "agrs", so we need to duplicate the misspelling here.
+    - stat /build.sh
+    - >
+      KANIKO_EXTRA_ARGS="--compressed-caching=false"
+      KANIKO_EXTRA_AGRS="--compressed-caching=false"
+      TAGS=pipe-${CI_PIPELINE_ID}
+      NAME=run_base
+      DOCKERFILE=run_base/Dockerfile
+      CONTEXT=run_base/
+      /build.sh
+  variables:
+    BUILD_ARGS: >
+      BUILD_BASE=$CI_REGISTRY/$CI_PROJECT_PATH/build_base:pipe-${CI_PIPELINE_ID} |
+      RUN_BASE_PARENT=$CI_REGISTRY/sim-performer/run-base/run-base:main |
+      ECFS_IMAGE=${ECFS_IMAGE} |
+      COREDUMP_DST=/builds/artifact
+build-it-REDACTED-part3:
+  # For some reason, we can only do a single build command per job
+  needs: ["build-it-REDACTED"]
+  rules:
+    - if: "$CI_PROJECT_URL =~ /gitlab\\.ebossproject\\.com/"
+  timeout: 4h
+  stage: build
+  image:
+    name: ${CI_REGISTRY}/general/docker-images/docker-builder:latest
+  variables:
+    BUILD_ARGS: >
+      BUILD_BASE=$CI_REGISTRY/$CI_PROJECT_PATH/build_base:pipe-${CI_PIPELINE_ID} |
+      SVF_IMAGE=$SVF_IMAGE |
+      SCREACH_IMAGE=$SCREACH_IMAGE
+  script:
+    # The build script misspelles "args" as "agrs", so we need to duplicate the misspelling here.
+    - stat /build.sh
+    - >
+      KANIKO_EXTRA_ARGS="--compressed-caching=false"
+      KANIKO_EXTRA_AGRS="--compressed-caching=false"
+      TAGS=pipe-${CI_PIPELINE_ID}
+      NAME=analysis
+      DOCKERFILE=analysis.Dockerfile
+      /build.sh
+
+test-it:
+  needs: ["build-it-REDACTED-part3"]
+  rules:
+    - if: "$CI_PROJECT_URL =~ /gitlab\\.ebossproject\\.com/"
+  timeout: 4h
+  stage: build
+  image:
+    name: $CI_REGISTRY/$CI_PROJECT_PATH/analysis:pipe-${CI_PIPELINE_ID}
+  tags: [privileged]
+  script:
+    - env DEBIAN_FRONTEND=noninteractive apt-get install -y gdb
+    - env BRACELET_BIN_DIR=/opt/bracelet-llvm/bin uv run --dev pytest src -n auto

@@ -1,0 +1,32 @@
+# Use INIT variants in a toolchain file
+set(CMAKE_C_COMPILER @INSTALL_PREFIX@/bin/bracelet-cc.sh)
+set(CMAKE_CXX_COMPILER @INSTALL_PREFIX@/bin/bracelet-c++.sh)
+set(CMAKE_LINKER @LLVM_INSTALL_PREFIX@/bin/ld.lld)
+
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=@LLVM_INSTALL_PREFIX@/bin/ld.lld")
+set(CMAKE_MODULE_LINKER_FLAGS_INIT "-fuse-ld=@LLVM_INSTALL_PREFIX@/bin/ld.lld")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=@LLVM_INSTALL_PREFIX@/bin/ld.lld")
+
+
+include_directories(@INSTALL_PREFIX@/include/bracelet_snapshot)
+add_compile_definitions(IS_BRACELET_BUILD)
+
+message(STATUS "Bracelet - Using custom Clang toolchain")
+message(STATUS "Using sbom info $ENV{BRACELET_SBOM_COMPONENT} $ENV{BRACELET_SBOM_VERSION}")
+
+if (DEFINED ENV{BRACELET_SBOM_COMPONENT})
+add_compile_options("$<$<COMPILE_LANGUAGE:C>:-mllvm=--bracelet-sbom-component=$ENV{BRACELET_SBOM_COMPONENT}>")                                                        
+add_compile_options("$<$<COMPILE_LANGUAGE:C>:-mllvm=--bracelet-sbom-version=$ENV{BRACELET_SBOM_VERSION}>")
+
+add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-mllvm=--bracelet-sbom-component=$ENV{BRACELET_SBOM_COMPONENT}>")
+
+add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-mllvm=--bracelet-sbom-version=$ENV{BRACELET_SBOM_VERSION}>")
+
+set(CMAKE_C_FLAGS_INIT "-mllvm=--bracelet-sbom-component=$ENV{BRACELET_SBOM_COMPONENT} -mllvm=--bracelet-sbom-version=$ENV{BRACELET_SBOM_VERSION}")
+set(CMAKE_CXX_FLAGS_INIT "-mllvm=--bracelet-sbom-component=$ENV{BRACELET_SBOM_COMPONENT} -mllvm=--bracelet-sbom-version=$ENV{BRACELET_SBOM_VERSION}")
+endif()
+
+if (DEFINED ENV{BRACELET_NODBG}) 
+    set(CMAKE_C_FLAGS_INIT "${CMAKE_C_FLAGS_INIT} -mllvm=--no-bracelet-include-debug-data")
+    set(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS_INIT} -mllvm=--no-bracelet-include-debug-data")
+endif()

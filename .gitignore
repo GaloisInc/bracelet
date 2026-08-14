@@ -1,0 +1,6 @@
+.vscode
+.venv
+__pycache__
+/build
+/.cache
+src/bracelet_scripts/rules/

@@ -1,0 +1,8 @@
+#include "prelude.h"
+
+{% for x in globals %}
+  T {{ ident(x) }};
+  void init_global_{{ ident(x) }}(void) {
+    {{ ident(x) }} = malloc(__nondeterministic_choice());
+  }
+{% endfor %}

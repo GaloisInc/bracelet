@@ -1,0 +1,18 @@
+
+#include "prelude.h"
+
+<% for (const auto& [node, state]: node_states) { %>
+  <% if (!std::holds_alternative<NodeStateFunction>(state)) { %>
+    T <%= absl::StreamFormat("%v", renderSymbol(node.symbol())) %>;
+  <% } %>
+<% } %>
+
+void bracelet_init_globals(void) {
+  <% for (const auto& [node, state]: node_states) { %>
+    <% if (!std::holds_alternative<NodeStateFunction>(state)) { %>
+      <%= absl::StreamFormat("%v", renderSymbol(node.symbol())) %> =
+        malloc(__nondeterministic_choice());
+    <% } %>
+  <% } %>
+}
+

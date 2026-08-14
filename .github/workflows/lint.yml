@@ -1,0 +1,66 @@
+name: lint
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    name: lint
+    # The default is 360 (i.e., 6 hours), which can be wasteful. See:
+    # https://github.com/Cambridge-ICCS/green-ci/blob/b9e942d81e4d6536d69f3cfbffe28fa14b8ae381/README.md#time-limits
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # https://github.com/actions/checkout/issues/485
+          persist-credentials: false
+          submodules: false
+
+      - name: Lint GitHub Actions workflows with zizmor
+        uses: zizmorcore/zizmor-action@6599ee8b7a49aef6a770f63d261d214911a7ce02 # v0.6.0
+        with:
+          version: "1.26.1"
+          advanced-security: false
+
+      - name: Install ruff
+        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89 # v4.1.0
+        with:
+          # TODO: Lint elsewhere, e.g., build_file_table.py
+          src: src/
+          version: "0.16.0"
+
+      - name: Spell check
+        # We pin a specific version because updates can come with additional
+        # typo fixes. These could break CI unexpectedly if we just pinned @v1.
+        uses: crate-ci/typos@bee27e3a4fd1ea2111cf90ab89cd076c870fce14 # v1.48.0
+        with:
+          files: |
+            doc/**/*.md
+            README.md
+
+      - name: Find stale TODOs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          python3 scripts/lint/stale-todo.py
+          $(git ls-files '*.cpp')
+          $(git ls-files '*.md')
+          $(git ls-files '*.py')
+
+      # TODO: black
+      # TODO: isort
+      # TODO: mypy
+      # TODO: mdlynx
+      # TODO: ttlint

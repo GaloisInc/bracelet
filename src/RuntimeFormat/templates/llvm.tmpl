@@ -1,0 +1,92 @@
+#pragma once
+
+#include <assert.h>
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Module.h"
+
+namespace bracelet {
+namespace runtime_format_llvm {
+struct RuntimeStructs {
+  {% for ty in ALL_STRUCTS %}
+    llvm::StructType* {{ty.name}} = nullptr;
+  {% endfor %}
+  struct {
+    {% for ty in ALL_STRUCTS %}
+      struct {
+        {% for field_name, field_ty in zip(ty.field_names, ty.field_types) %}
+          {{ field_ty.llvm_type_type }} {{ field_name }} = nullptr;
+        {% endfor %}
+      } {{ty.name}};
+    {% endfor %}
+  } fields;
+
+  explicit RuntimeStructs(llvm::Module& M): M(M) {
+    auto& ctx = M.getContext();
+    {% for ty in ALL_STRUCTS %}
+      {% for field, field_ty in zip(ty.field_names, ty.field_types) %}
+        fields.{{ ty.name }}.{{ field }} = {{ field_ty.llvm_type }};
+      {% endfor %}
+      {{ ty.name }} = llvm::StructType::create(
+        "{{ ty.name }}"
+        {% for field in ty.field_names %}
+          , fields.{{ ty.name }}.{{ field }}
+        {% endfor %}
+      );
+    {% endfor %}
+  }
+  {% for function_name, function in RUNTIME_FUNCTIONS.items() %}
+    llvm::Function* {{ function_name }}() {
+      auto& ctx = M.getContext();
+      if (m_{{ function_name }} == nullptr)
+        m_{{ function_name}} =llvm::Function::Create(
+          llvm::FunctionType::get(
+            {% if function.return_type %}
+              {{ function.return_type.llvm_type }}
+            {% else %}
+              llvm::Type::getVoidTy(ctx)
+            {% endif %},
+            {
+              {% for arg_name, arg_ty in function.args.items() %}
+                {% if not loop.first %},{% endif %}{{ arg_ty.llvm_type }}
+              {% endfor %}
+            },
+            false
+          ),
+          llvm::GlobalValue::ExternalLinkage,
+          {{ function_name|tojson }},
+          M
+        );
+      return m_{{ function_name }};
+    }
+  {% endfor %}
+  private:
+    llvm::Module& M;
+    {% for function_name in RUNTIME_FUNCTIONS %}
+      llvm::Function* m_{{ function_name }} = nullptr;
+    {% endfor %}
+};
+
+{% for ty in ALL_STRUCTS %}
+  struct Constant{{ ty.name }} {
+    {% for field in ty.field_names %}
+      llvm::Constant* {{field}} = nullptr;
+    {% endfor %}
+
+    llvm::Constant* get(const RuntimeStructs& structs) {
+      {% for field in ty.field_names %}
+        assert(this->{{ field }} != nullptr);
+      {% endfor %}
+      return llvm::ConstantStruct::get(
+        structs.{{ty.name}}
+        {% for field in ty.field_names %}
+          , this->{{field}}
+        {% endfor %}
+      );
+    }
+  };
+{% endfor %}
+
+} // namespace runtime_format_llvm
+} // namepspace bracelet
+

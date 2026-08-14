@@ -1,0 +1,78 @@
+#include "prelude.h"
+
+/////////////////////////////////////////////////
+// {{ ident(edges.function) }}
+/////////////////////////////////////////////////
+
+{% macro prototype(node, num_args, noinline=False) -%}
+  T
+  {% if noinline %}NO_INLINE{% endif %}
+  {{ident(node)}}(
+    {% if num_args == 0 %}
+      void
+    {% else %}
+      {% for i in range(num_args) %}
+        T arg{{i}}{% if not loop.last %},{%endif%}
+      {% endfor %}
+    {% endif %}
+  )
+{%- endmacro %}
+
+{% for n, count in nargs.items() %}
+  {{ prototype(n, count) }};
+{% endfor %}
+
+{% for x in globals %}
+  extern T {{ ident(x) }};
+{% endfor %}
+
+
+{{ prototype(edges.function, nargs[edges.function], noinline=True) }} {
+  {% for x in locals %}
+    // {{ debug_table[x]|join('; ') }}
+    T {{ ident(x) }}
+      {% if x in edges.is_alloca %}
+        = malloc(__nondeterministic_choice());
+      {% endif %}
+    ;
+  {% endfor %}
+  while (__nondeterministic_choice()) {
+    {% for e in edges.assign %}
+      NONDET {{ ident(e.dest) }} = {{ ident(e.source) }};
+    {% endfor %}
+    {% for e in edges.load %}
+      NONDET {{ ident(e.into) }} = *((T*){{ ident(e.addr) }});
+    {% endfor %}
+    {% for e in edges.store %}
+      NONDET *((T*){{ ident(e.addr) }}) = {{ ident(e.value) }};
+    {% endfor %}
+    {% for e in edges.call %}
+      NONDET {{ ident(e.callsite) }} = {% if e.callee.is_local %}
+        ((T(*)(
+          {% if e.idx == 0 %}
+            void
+          {% else %}
+            {% for i in range(e.nargs) %}
+              T{% if not loop.last %},{% endif %}
+            {% endfor %}
+          {% endif %}
+        )){{ ident(e.callee) }})
+      {% else %}
+        {{ ident(e.callee) }}
+      {% endif %}(
+          {% for i in range(e.nargs) %}
+            {{ nondet_select(argument_supply[e.callsite][i]) }}
+            {% if not loop.last %},{% endif %}
+          {% endfor %}
+      );
+    {% endfor %}
+    {% for e in edges.ret %}
+      NONDET return {{ ident(e.value) }};
+    {% endfor %}
+    {% for e in edges.argument_definition %}
+      NONDET {{ ident(e.value) }} = arg{{ e.arg_no }};
+    {% endfor %}
+  }
+  return NULL;
+}
+

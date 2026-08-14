@@ -1,0 +1,24 @@
+
+set dotenv-load := true
+
+prefix := env("PREFIX", "./")
+bin := prefix / "bin"
+ccomp := bin / "bracelet-cc.sh"
+cxxcomp := bin / "bracelet-c++.sh"
+
+
+_compile_and_run_suite target arg-cxxcomp arg-cxxflags arg-ccomp arg-ccflags:
+	cmake -DCMAKE_CXX_FLAGS={{arg-cxxflags}} -DCMAKE_C_FLAGS={{arg-ccflags}} -DTEST_SUITE_SUBDIRS="MultiSource" \
+		-DTEST_SUITE_COLLECT_CODE_SIZE=OFF -DTEST_SUITE_BENCHMARKING_ONLY=ON -DCMAKE_C_COMPILER={{arg-ccomp}} -DCMAKE_CXX_COMPILER={{arg-cxxcomp}} -S llvm-test-suite -B {{target}}
+	cd {{target}} && make -j 4
+	cd {{target}} && uv run lit -v -j 4 -o results.json MultiSource
+
+run-suite-bracelet-nodebug: (_compile_and_run_suite "llvm-test-suite-build-bracelet-nodebug" cxxcomp  "-mllvm=--no-bracelet-include-debug-data" ccomp "-mllvm=--no-bracelet-include-debug-data")
+run-suite-bracelet:  (_compile_and_run_suite "llvm-test-suite-build-bracelet" cxxcomp  "" ccomp "")
+run-suite-upstream: (_compile_and_run_suite "llvm-test-suite-upstream" "clang++-20"  "" "clang-20" "")
+
+aggregate-timing target1 target2 name1 name2:
+	uv run python parser.py {{target1}}/results.json {{target2}}/results.json --name1 {{name1}} --name2 {{name2}} -o output.csv
+
+search-for-prof target:
+	grep -ril --include="*callgrind*" "bracelet" {{target}} | xargs cat > callgrind.merged.out

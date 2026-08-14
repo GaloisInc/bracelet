@@ -1,0 +1,397 @@
+<%
+  std::array<std::string_view, 64> arg_names_arr = {
+    "arg0", "arg1", "arg2", "arg3", "arg4", "arg5", "arg6", "arg7",
+    "arg8", "arg9", "arg10", "arg11", "arg12", "arg13", "arg14", "arg15",
+    "arg16", "arg17", "arg18", "arg19", "arg20", "arg21", "arg22", "arg23",
+    "arg24", "arg25", "arg26", "arg27", "arg28", "arg29", "arg30", "arg31",
+    "arg32", "arg33", "arg34", "arg35", "arg36", "arg37", "arg38", "arg39",
+    "arg40", "arg41", "arg42", "arg43", "arg44", "arg45", "arg46", "arg47",
+    "arg48", "arg49", "arg50", "arg51", "arg52", "arg53", "arg54", "arg55",
+    "arg56", "arg57", "arg58", "arg59", "arg60", "arg61", "arg62", "arg63"
+  };
+  boost::span<std::string_view> arg_names = boost::span(arg_names_arr);
+  // def_override records the names of overrides, in addition to emitting code for their prototype.
+  auto def_override_generic = [&](
+    std::string_view kind,
+    std::string_view name,
+    auto arg_names
+  ) {
+    override_nargs[name] = arg_names.size();
+    out_stream << "T " << kind << "(" << name << ")(";
+    if (arg_names.size() == 0)
+      out_stream << "void";
+    bool first = true;
+    for (std::string_view name : arg_names) {
+      if (first)
+        first = false;
+      else
+        out_stream <<", ";
+      out_stream << "T " << name;
+    }
+    out_stream << ")";
+  };
+  auto def_override = [&](std::string_view name, std::initializer_list<std::string_view> arg_names) {
+    def_override_generic("DEF_OVERRIDE", name, arg_names);
+  };
+  auto def_override_inline = [&](std::string_view name, std::initializer_list<std::string_view> arg_names) {
+    def_override_generic("DEF_OVERRIDE_INLINE", name, arg_names);
+  };
+%>
+<%
+// an empty override does nothing and returns NULL.
+auto def_override_empty = [&](
+  std::initializer_list<std::tuple<std::string_view, unsigned>> overides
+) {
+  for(auto [name, nargs]: overides) {
+    assert(nargs <= arg_names.size());
+    auto args = arg_names.subspan(0, nargs);
+    def_override_generic("DEF_OVERRIDE", name, args);
+    %>
+    {
+      <% for (auto arg: args) { %>
+        (void)<%= arg %>;
+      <% } %>
+      return NULL;
+    }
+    <%
+  }
+};
+%>
+<%
+// a conservative override mixes all arguments and returns an allocation
+auto def_override_conservative_single = [&](
+  std::string_view name, unsigned nargs
+) {
+    assert(nargs <= arg_names.size());
+    auto args = arg_names.subspan(0, nargs);
+    def_override_generic("DEF_OVERRIDE", name, args);
+    %>
+    {
+      T tmp = malloc(__nondeterministic_choice());
+      while (__nondeterministic_choice()) {
+      <% for (auto arg: args) { %>
+        NONDET tmp = <%= arg %>;
+        NONDET *((T*)tmp) = tmp;
+        NONDET tmp = *((T*)tmp);
+      <% } %>
+      }
+      return tmp;
+    }
+    <%
+};
+auto def_override_conservative = [&](
+  std::initializer_list<std::tuple<std::string_view, unsigned>> overides
+) {
+  for(auto [name, nargs]: overides) {
+    def_override_conservative_single(name, nargs);
+  }
+};
+%>
+#pragma once
+#define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
+
+#include <malloc.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+
+// This function is not implemented so SVF/LLVM will treat it as if it could return any number
+extern unsigned long __nondeterministic_choice(void);
+#define NONDET if (__nondeterministic_choice())
+#define NONDET_SELECT(x, y) (__nondeterministic_choice() ? (x) : (y))
+
+typedef void *T;
+
+#define WEAK __attribute__((weak))
+#define NO_INLINE __attribute__((noinline))
+#define ALWAYS_INLINE __attribute__((always_inline))
+
+#define OVERRIDE(x) bracelet_override_##x
+#define DEF_OVERRIDE(x) WEAK NO_INLINE OVERRIDE(x)
+// SVF treats some functions specially (see SVF's extapi.c). We want to call
+// those functions directly, where we can.
+#define DEF_OVERRIDE_INLINE(x) WEAK ALWAYS_INLINE OVERRIDE(x)
+
+<% def_override_inline("malloc", {"size"}); %> {
+  (void)size;
+  return malloc(__nondeterministic_choice());
+}
+
+<% def_override_inline("__libc_malloc", {"size"}); %> {
+   (void)size;
+   return malloc(__nondeterministic_choice());
+}
+
+<% def_override_inline("realloc", {"old", "size"}); %> {
+  (void)size;
+  return realloc(old, __nondeterministic_choice());
+}
+
+<% def_override_inline("__libc_realloc", {"old", "size"}); %> {
+  (void)size;
+  return realloc(old, __nondeterministic_choice());
+}
+
+<% def_override_inline("reallocarray", {"old", "count", "size"}); %> {
+  (void)count;
+  (void)size;
+  return reallocarray(old, __nondeterministic_choice(),
+                      __nondeterministic_choice());
+}
+
+<% def_override_inline("__libc_reallocarray", {"old", "count", "size"}); %> {
+  (void)count;
+  (void)size;
+  return reallocarray(old, __nondeterministic_choice(),
+                      __nondeterministic_choice());
+}
+
+<% def_override_inline("calloc", {"x", "y"}); %> {
+  (void)x;
+  (void)y;
+  return calloc(__nondeterministic_choice(), __nondeterministic_choice());
+}
+
+<% def_override_inline("__libc_calloc", {"x", "y"}); %> {
+  (void)x;
+  (void)y;
+  return calloc(__nondeterministic_choice(), __nondeterministic_choice());
+}
+
+<% def_override_inline("memalign", {"alignment", "size"}); %> {
+  (void)alignment;
+  (void)size;
+  return memalign(__nondeterministic_choice(), __nondeterministic_choice());
+}
+
+<% def_override_inline("aligned_alloc", {"alignment", "size"}); %> {
+  (void)alignment;
+  (void)size;
+  return memalign(__nondeterministic_choice(), __nondeterministic_choice());
+}
+
+<% def_override_inline("__libc_memalign", {"alignment", "size"}); %> {
+  (void)alignment;
+  (void)size;
+  return memalign(__nondeterministic_choice(), __nondeterministic_choice());
+}
+
+<% def_override_inline("posix_memalign", {"memptr", "alignment", "size"}); %> {
+  (void)alignment;
+  (void)size;
+  posix_memalign((void **)memptr, __nondeterministic_choice(), __nondeterministic_choice());
+  return NULL;
+}
+
+<% def_override_empty({
+  {"free", 1},
+  {"strlen", 1},
+  {"__strlen_evex", 1},
+  {"strcmp", 2},
+  {"strncmp", 3},
+  {"bind", 3},
+  {"accept", 3},
+  {"accept4", 4},
+  {"listen", 2},
+  {"perror", 1},
+  {"localeconv", 0},
+  {"pthread_mutex_init", 2},
+  {"pthread_mutex_lock", 1},
+  {"pthread_mutex_unlock", 1},
+  {"pthread_mutex_destroy", 1},
+  {"abort", 0},
+  {"atan2", 2},
+  {"atan2f", 2},
+  {"atan2l", 2},
+  {"exp", 1},
+  {"expf", 1},
+  {"expl", 1},
+  {"modff", 2},
+  {"modfl", 2},
+  {"eventfd", 2},
+  {"bcmp", 3},
+  {"clock_gettime", 2},
+  {"close", 1},
+  {"exit", 1},
+  {"munmap", 2},
+  {"rand", 0},
+  {"rand_r", 1},
+  {"srand", 1},
+  {"clearerror", 1},
+  {"feof", 1},
+  {"ferror", 1},
+  {"fileno", 1},
+  {"_ZdlPvm", 2},
+  {"iconv_open", 2},
+  {"iconv", 5}, // not needed for callgraph, but needs better signature
+  {"iconv_close", 1},
+  {"isspace", 1},
+  {"tolower", 1},
+  {"toupper", 1},
+  {"strtod", 2},
+  {"strtol", 3},
+  {"strtoll", 3},
+  {"__isoc23_strtol", 3},
+  {"strtoull", 3},
+  {"__isoc23_strtoul", 3}
+});%>
+
+<% def_override_conservative({
+  {"_ZSt29_Rb_tree_insert_and_rebalancebPSt18_Rb_tree_node_baseS0_RS_", 4},
+  {"_ZSt18_Rb_tree_decrementPSt18_Rb_tree_node_base", 1},
+  {"_ZSt18_Rb_tree_incrementPSt18_Rb_tree_node_base", 1}
+});%>
+
+<% def_override_inline("memcpy", {"x", "y", "sz"}); %> {
+  (void)sz;
+  return memcpy(x, y, __nondeterministic_choice());
+}
+
+<% def_override_inline("memset", {"x", "c", "sz"}); %> {
+  (void)c;
+  (void)sz;
+  return memset(x, __nondeterministic_choice(), __nondeterministic_choice());
+}
+
+<% def_override("memchr", {"str", "c", "n"}); %> {
+  (void)c;
+  (void)n;
+  return str;
+}
+
+<% def_override("memrchr", {"str", "c", "n"}); %> {
+  (void)c;
+  (void)n;
+  return str;
+}
+
+<% def_override_inline("__memmove_chk_avx512_unaligned_erms", {"dst", "src", "len", "dstlen"}); %> {
+  (void)len;
+  (void)dstlen;
+  return memcpy(dst, src, __nondeterministic_choice());
+}
+
+typedef struct BraceletFile {
+  T cookie;
+  cookie_io_functions_t funcs;
+} BraceletFile;
+
+// Inline because it allocates.
+<% def_override_inline("fopen", {"name", "mode"}); %> {
+  (void)name;
+  (void)mode;
+  return calloc(1, sizeof(BraceletFile));
+}
+// Inline because it allocates.
+<% def_override_inline("fdopen", {"fd", "mode"}); %> {
+  (void)fd;
+  (void)mode;
+  return calloc(1, sizeof(BraceletFile));
+}
+
+// TODO: test this!
+// Inline because it allocates.
+<% def_override_inline("fopencookie", {"cookie", "mode", "funcs"}); %> {
+  BraceletFile *out = (BraceletFile *)calloc(1, sizeof(BraceletFile));
+  (void)mode;
+  out->cookie = cookie;
+  // Even though the cookie functions struct is passed by value, LLVM compiles
+  // it into a pointer.
+  out->funcs = *(cookie_io_functions_t *)funcs;
+  return (void *)out;
+}
+
+
+<% def_override_inline("pthread_create", {"thread_out", "attr", "start_routine", "arg"}); %> {
+  // We need to indicate that arg is passed to start_routine.
+  // Technically, this doesn't happen due to it being called from
+  // pthread_create() but we model it like this for SVF.
+  (void)thread_out;
+  (void)attr;
+  ((T (*)(T))start_routine)(arg);
+  return NULL;
+}
+
+<% def_override_inline("_ZNSt6thread15_M_start_threadESt10unique_ptrINS_6_StateESt14default_deleteIS1_EEPFvvE",
+  {"this", "thread_state", "start_routine"}); %> {
+  // TODO should something happen here?
+  (void)this;
+  (void)thread_state;
+  ((T (*)())start_routine)();
+  return NULL;
+}
+
+<% def_override_inline("_Znwm", {"sz"}); %> {
+  (void)sz;
+  return malloc(__nondeterministic_choice());
+}
+
+<% def_override("strstr", {"haystack", "needle"}); %> {
+  (void)needle;
+  return haystack;
+}
+
+
+<% def_override_inline("mmap", {"addr", "len", "prot", "flags", "fd", "off"}); %> {
+  (void)len;
+  (void)prot;
+  (void)flags;
+  (void)fd;
+  (void)off;
+  return mmap(addr, __nondeterministic_choice(), __nondeterministic_choice(),
+              __nondeterministic_choice(), __nondeterministic_choice(),
+              __nondeterministic_choice());
+}
+
+<% def_override_inline("shmat", {"shmid", "shmaddr", "shmflg"}); %> {
+  (void)shmid;
+  (void)shmflg;
+  T ptr = NULL;
+  NONDET ptr = malloc(__nondeterministic_choice());
+  NONDET ptr = shmaddr;
+  return ptr;
+}
+
+<% def_override_inline("__mmap", {"addr", "len", "prot", "flags", "fd", "off"}); %> {
+  (void)len;
+  (void)prot;
+  (void)flags;
+  (void)fd;
+  (void)off;
+  return mmap(addr, __nondeterministic_choice(), __nondeterministic_choice(),
+              __nondeterministic_choice(), __nondeterministic_choice(),
+              __nondeterministic_choice());
+}
+
+<% def_override("memmem", {"haystack", "x", "y", "z"}); %> {
+  (void)x;
+  (void)y;
+  (void)z;
+  return haystack;
+}
+
+<% def_override("qsort", {"base", "nmemb", "size", "cmp"}); %> {
+  (void)nmemb;
+  (void)size;
+  ((T (*)(T, T))cmp)(base, base);
+  return NULL;
+}
+<% def_override("qsort_r", {"base", "nmemb", "size", "cmp", "ctx"}); %> {
+  (void)nmemb;
+  (void)size;
+  ((T (*)(T, T, T))cmp)(base, base, ctx);
+  return NULL;
+}
+
+<% def_override("_ZStlsISt11char_traitsIcEERSt13basic_ostreamIcT_ES5_PKc", {"ostream", "str"}); %> {
+   (void)str;
+   return ostream;
+}
+
+<% def_override("_ZNSolsEi", {"ostream", "n"}); %> {
+   (void)n;
+   return ostream;
+}

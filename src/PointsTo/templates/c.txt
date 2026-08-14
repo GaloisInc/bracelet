@@ -1,0 +1,122 @@
+#include "prelude.h"
+
+// Externs
+<% for (const auto& [node, state]: node_states) { %>
+  <% if (std::holds_alternative<NodeStateFunction>(state)) { %>
+    <% writePrototype(out_stream, node.symbol(), std::get<NodeStateFunction>(state).nargs); %>;
+  <% } else { %>
+    extern T <%= show_node(node) %>;
+  <% } %>
+<% } %>
+
+
+<% for (unsigned i = 0; i < fi.num_locals; i++) { %>
+  <% if (fi.debug_data.has_locals()) { %>
+    <% auto name = fi.debug_data.local_name(i); %>
+    <% if (name.has_value()) { %>
+      // <%= name.value() %>
+    <% } %>
+  <% } %>
+  T <%= show_node(edges::Node::local(fi.function.symbol(), i)) %> = NULL;
+<% } %>
+
+<% writePrototype(out_stream, fi.function.symbol(), this_function_nargs); %> {
+  <% for (unsigned i = 0; i < fi.num_allocas; i++) { %>
+    <%= show_node(edges::Node::local(fi.function.symbol(), i)) %> =
+      malloc(__nondeterministic_choice());
+  <% } %>
+  <% BRACELET_TRY(fi.visitEdges([&](const edges::Call& call) -> Result<void> { %>
+    <% for (unsigned i = 0; i < call.nargs(); i++) { %>
+      <%
+        assert(call.callsite().symbol() == fi.function.symbol());
+        assert(call.callsite().local_idx());
+      %>
+      T call_arg_<%= *call.callsite().local_idx() %>_<%= i %> = NULL;
+    <% } %>
+    <% return ok();
+  })); %>
+  while (__nondeterministic_choice()) {
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::Assign& e) -> Result<void> { %>
+      NONDET <%= show_node(e.dest()) %> = <%= show_node(e.source()) %>;
+      <% return ok();
+    })); %>
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::Load& e) -> Result<void> { %>
+      NONDET <%= show_node(e.into()) %> = *((T*)<%= show_node(e.addr()) %>);
+      <% return ok();
+    })); %>
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::Store& e) -> Result<void> { %>
+      NONDET *((T*)<%= show_node(e.addr()) %>) = <%= show_node(e.value()) %>;
+      <% return ok();
+    })); %>
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::Call& call) -> Result<void> { %>
+      NONDET <%= show_node(call.callsite()) %> = <% if (call.callee().local_idx()) { %>
+        (
+          (T(*)(
+            <% if (call.nargs() == 0) { %>
+              void
+            <% } %>
+            <% for (unsigned i = 0; i < call.nargs(); i++) { %>
+              <% if (i > 0) { %>, <% } %>T
+            <% } %>
+          ))
+          <%= show_node(call.callee()) %>
+        )
+      <% } else { %>
+        <%= show_node(call.callee()) %>
+      <% } %>(
+        <% for (unsigned i = 0; i < call.nargs(); i++) { %>
+          <% if (i > 0) { %>, <% } %>
+          call_arg_<%= *call.callsite().local_idx() %>_<%= i %>
+        <% } %>
+      );
+      <% return ok();
+    })); %>
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::Return& e) -> Result<void> { %>
+      NONDET return <%= show_node(e.value()) %>;
+      <% return ok();
+    })); %>
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::ArgumentDefinition& e) -> Result<void> { %>
+      NONDET <%= show_node(e.value()) %> = arg<%= e.arg_no() %>;
+      <% return ok();
+    })); %>
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::ArgumentSupply& e) -> Result<void> { %>
+      <%
+        assert(e.callsite().symbol() == fi.function.symbol());
+        assert(e.callsite().local_idx());
+      %>
+      NONDET call_arg_<%= *e.callsite().local_idx() %>_<%= e.arg_no() %> =
+        <%= show_node(e.value()) %>;
+      <% return ok();
+    })); %>
+    <% BRACELET_TRY(fi.visitEdges([&](const edges::DlsymPagePointer &E) -> Result<void> {
+         auto page_ptr_node = E.page_ptr();
+         BRACELET_ENSURE(!page_ptr_node.local_idx(),
+                       "page pointer should be a symbol");
+         object_parsing::Address page;
+         BRACELET_TRY_CONTEXT(
+             obj.resolvePointers(boost::span(&page, 1), page_ptr_node.symbol()),
+             "dlsym page initial pointer");
+         while (page != 0) {
+           uint64_t count;
+           BRACELET_TRY_CONTEXT(
+               obj.copyData(boost::span((uint8_t *)&count, sizeof(count)), page + 8),
+               "dlsym page count");
+           // TODO(#25): use RuntimeFormat to actually parse this.
+           // 2046 comes from the dlsym RuntimeFormat struct.
+           std::array<object_parsing::Address, 2046> pointers;
+           BRACELET_TRY_CONTEXT(obj.resolvePointers(boost::span(pointers), page + 16),
+                              "dlsym page body pointers");
+           for (uint64_t i = 0; i < std::min(count, pointers.size()); i++) {
+	     if (pointers[i] != 0) {
+    %>
+      NONDET <%= show_node(E.dlsym_output()) %> = <%= show_node(edges::Node::symbol(pointers[i])) %>;
+    <%       }
+           }
+           BRACELET_TRY_CONTEXT(obj.resolvePointers(boost::span(&page, 1), page),
+                              "dlsym page next pointer");
+         }
+         return ok();
+    })); %>
+  }
+  return NULL;
+}

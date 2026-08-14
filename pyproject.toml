@@ -1,0 +1,52 @@
+[project]
+name = "bracelet_scripts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.2.1",
+    "cxxfilt>=0.3.0",
+    "jinja2>=3.1.6",
+    "networkx>=3.5",
+    "pydantic>=2.11.5",
+    "pydot>=4.0.1",
+    "pyelftools>=0.32",
+    "semver>=3.0.4",
+    "tqdm>=4.67.1",
+    "lit",
+    "tree-sitter>=0.25.2",
+    "tree-sitter-cpp>=0.23.4",
+    "lldb-python>=19.0.0.dev1",
+    "grpcio-tools>=1.78.0",
+    "protobuf>=6.33.5",
+    "pycurl>=7.45.7",
+    "sarif-pydantic>=0.6.2",
+]
+
+[tool.isort]
+profile = "black"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "ipython>=9.5.0",
+    "isort>=6.0.1",
+    "meson>=1.9.0",
+    "mypy>=1.17.1",
+    "pytest>=8.4.1",
+    "pytest-xdist[psutil]>=3.8.0",
+    "ruff==0.16.0",
+    "types-networkx>=3.5.0.20250901",
+    "types-tqdm>=4.67.0.20250809",
+]
+
+[tool.mypy]
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["src"]

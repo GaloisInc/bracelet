@@ -1,0 +1,9 @@
+[submodule "profile/llvm-test-suite"]
+	path = profile/llvm-test-suite
+	url = https://github.com/llvm/llvm-test-suite
+[submodule "llvm-project"]
+	path = llvm-project
+	url = https://github.com/GaloisInc/bracelet-llvm
+[submodule "svf"]
+	path = svf
+	url = https://github.com/GaloisInc/bracelet-svf

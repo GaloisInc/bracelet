@@ -1,0 +1,8 @@
+*_build
+*cachegrind*
+*callgrind*
+*profraw*
+*prof*
+llvm-test-suite-build-bracelet-flags
+llvm-test-suite-upstream
+llvm-test-suite-build-bracelet-noflags

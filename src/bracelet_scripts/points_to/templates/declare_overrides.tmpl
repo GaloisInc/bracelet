@@ -1,0 +1,8 @@
+///////////////////
+// OVERRIDES!
+///////////////////
+
+{% for node, symbol in overrides.items() %}
+#define {{node}} OVERRIDE({{symbol}})
+{% endfor %}
+

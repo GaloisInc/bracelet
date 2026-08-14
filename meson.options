@@ -1,0 +1,47 @@
+option(
+  'bracelet_trace',
+  type: 'combo',
+  choices: ['off', 'indirect_callees', 'full'],
+  value: 'off',
+  description: 'Enable tracing?',
+)
+
+option(
+  'bracelet_debug',
+  type: 'boolean',
+  value: true,
+  description: 'Whether to record edges debug data'
+)
+
+option(
+  'force_dwarf4',
+  type: 'boolean',
+  value: false,
+  description: 'Force dwarf4',
+)
+
+option(
+  'profile',
+  type: 'boolean',
+  value: false,
+  description: 'Generate profiling instructions',
+)
+
+option(
+  'test',
+  type: 'boolean',
+  value: true,
+  description: 'Disable tests',
+)
+
+option(
+  'bracelet_llvm_extensions',
+  type: 'boolean',
+  value: true,
+  description: 'Use BRACELET-specific LLVM extensions',
+)
+
+option('clang-dir',
+  type: 'string',
+  value: '',
+  description: 'Override the clang dir used by the compiler wrapper')

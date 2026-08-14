@@ -1,0 +1,7 @@
+build*/
+snapshot/
+vcpkg-cache/
+callgraph.csv
+result.json
+out/*
+.vscode

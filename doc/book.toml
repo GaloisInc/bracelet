@@ -1,0 +1,15 @@
+[book]
+title = "BRACELET"
+authors = ["Galois, Inc."]
+language = "en"
+
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output]
+
+[output.html]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
+git-repository-url = "https://github.com/GaloisInc/bracelet"
