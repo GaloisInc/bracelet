@@ -238,9 +238,13 @@ consumes a source file and produces an object file containing metadata in the `G
 The reachability LLVM pass located in 
 `src/BRACELETReachability` traverses an LLVM module and creates globals in several sections that store tuples described in the [metadata](metadata.md) chapter.
 
+## YouTube Video
+
+[![Watch the video on YouTube.](https://img.youtube.com/vi/HxnLnwrV-X0/0.jpg)](https://www.youtube.com/watch?v=HxnLnwrV-X0)
+
 ---
 
-This material is based upon work supported by the Defense Advanced Research Projects Agency under Contract No. HR001124C0488
+This material is based upon work supported by the Defense Advanced Research Projects Agency under Contract No. HR001124C0488.
 
 Any opinions, findings and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the Defense Advanced Research Projects Agency or the U.S. Government.
 

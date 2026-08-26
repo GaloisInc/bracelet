@@ -66,10 +66,14 @@ use BRACELET to triage even a closed-source application.
 
 For more information about BRACELET, please consult [the documentation](./doc).
 
+## YouTube Video
+
+[![Watch the video on YouTube.](https://img.youtube.com/vi/HxnLnwrV-X0/0.jpg)](https://www.youtube.com/watch?v=HxnLnwrV-X0)
+
 ---
 
 This material is based upon work supported by the Defense Advanced Research
-Projects Agency under Contract No. HR001124C0488
+Projects Agency under Contract No. HR001124C0488.
 
 Any opinions, findings and conclusions or recommendations expressed in this
 material are those of the author(s) and do not necessarily reflect the views of
