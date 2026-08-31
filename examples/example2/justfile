@@ -1,0 +1,65 @@
+set dotenv-load
+
+export PATH := env("HOME") / ".local/bin:" + env("HOME") / ".ghcup/bin:" + env("PATH")
+
+screach_image := "ghcr.io/galoisinc/screach:nightly"
+binary := justfile_directory() / "build/extract"
+overrides_dir := justfile_directory() / "overrides"
+
+# E2E: just build && just callgraph && just synthesize && just test-pov
+
+# Show available recipes
+default:
+    @just --list
+
+# Build the extract binary using the active Nix shell
+build:
+    mkdir -p {{justfile_directory()}}/vcpkg-cache
+    VCPKG_DEFAULT_BINARY_CACHE={{justfile_directory()}}/vcpkg-cache \
+        cmake -S {{justfile_directory()}} -B {{justfile_directory()}}/build -G Ninja \
+        -DVCPKG_TARGET_TRIPLET=x64-linux-braceletnodbg \
+        -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$BRACELET_TOOLCHAIN_FILE" \
+        -DCMAKE_TOOLCHAIN_FILE="$VCPKG_TOOLCHAIN_FILE"
+    cmake --build {{justfile_directory()}}/build --parallel
+    ctest --test-dir {{justfile_directory()}}/build --output-on-failure
+
+# Generate callgraph from binary relocations
+callgraph:
+    python3 {{justfile_directory()}}/gen-callgraph.py {{binary}} -o {{justfile_directory()}}/callgraph.csv
+
+# Synthesize PoV for CVE-2022-37434 from main
+# Flow: main -> read(stdin) -> dispatch_buffer -> detect_mime (overridden) -> strcmp (overridden) -> handle_gzip -> inflate -> memcpy underflow
+# --sym-stdin populates stdin so read() returns data (otherwise len=0 and inflate loop is skipped)
+# To find target-addr (first memcpy call in inflate): objdump -d build/extract | grep -A2 -B50 "call.*memcpy@plt" | grep -B50 "^[0-9a-f]* <inflate>:" | grep "call.*memcpy@plt" | head -1
+# To find containing function address: readelf -s build/extract | grep ' inflate$'
+synthesize *args:
+    docker run --rm --pull=missing \
+        --volume "{{justfile_directory()}}:{{justfile_directory()}}:ro" \
+        {{screach_image}} {{binary}} \
+        --entry-symbol 'main' \
+        --target-addr 0x16eb1f \
+        --target-containing-function-address 0x16d050 \
+        --target-override {{justfile_directory()}}/target.cbl \
+        --overrides {{overrides_dir}}/detect_mime.x64.cbl \
+        --overrides {{overrides_dir}}/strcmp.x64.cbl \
+        --overrides {{overrides_dir}}/crc32.x64.cbl \
+        --callgraph {{justfile_directory()}}/callgraph.csv \
+        --sym-stdin 256 \
+        --loop-bound 256 \
+        --timeout 600 \
+        {{args}} 2>&1 | tee {{justfile_directory()}}/synthesize.log
+
+# Extract PoV from screach log and write pov.gz
+extract-pov logfile="synthesize.log":
+    python3 {{justfile_directory()}}/make-pov.py {{logfile}} -o {{justfile_directory()}}/pov.gz
+
+# Run the binary on pov.gz
+run-pov:
+    MAGIC={{justfile_directory()}}/build/vcpkg_installed/x64-linux-braceletnodbg/share/libmagic/misc/magic \
+        {{binary}} < {{justfile_directory()}}/pov.gz
+
+# Extract PoV and run it in one step
+test-pov logfile="synthesize.log":
+    MAGIC={{justfile_directory()}}/build/vcpkg_installed/x64-linux-braceletnodbg/share/libmagic/misc/magic \
+        python3 {{justfile_directory()}}/make-pov.py {{logfile}} -o {{justfile_directory()}}/pov.gz --run \
+        --binary {{binary}}
