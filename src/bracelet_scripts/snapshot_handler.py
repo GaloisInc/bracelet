@@ -109,6 +109,13 @@ def run_and_snapshot(rem: list[str], out: Path) -> None:
                 break
         print("done")
 
+        returncode = proc.poll()
+        if returncode is not None:
+            raise RuntimeError(
+                f"Snapshot target {rem!r} exited with status {returncode} "
+                "instead of pausing after closing stdout"
+            )
+
         dead_pids: set[int] = set()
         with open(f"/proc/{proc.pid}/coredump_filter", "w") as f:
             f.write("0xfff\n")
