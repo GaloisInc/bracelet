@@ -1,0 +1,6 @@
+build*/
+callgraph.csv
+pov.gz
+*.log
+__pycache__/
+snapshot/*

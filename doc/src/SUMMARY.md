@@ -6,6 +6,7 @@
 
 - [Getting Started](./getting-started.md)
 - [Example 1 Walkthrough](./example1.md)
+- [Example 2 Walkthrough](./example2.md)
 
 # Reference
 
