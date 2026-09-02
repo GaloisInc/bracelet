@@ -27,7 +27,6 @@ cmake -S . -B build -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$VCPKG_TOOLCHAIN_FILE"
 
 cmake --build build --parallel
-ctest --test-dir build --output-on-failure
 ```
 
 Run the program:
