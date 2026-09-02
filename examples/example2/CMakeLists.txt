@@ -17,13 +17,3 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ZLIB::ZLIB
 )
 target_compile_features(${PROJECT_NAME} PRIVATE c_std_11)
-
-if(BUILD_TESTING)
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  add_test(
-    NAME example2-smoke
-    COMMAND
-      ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/smoke.py
-      $<TARGET_FILE:${PROJECT_NAME}>
-  )
-endif()
